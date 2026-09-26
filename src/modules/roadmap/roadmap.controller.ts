@@ -6,6 +6,11 @@ import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 export class RoadmapController {
   constructor(private roadmapService: RoadmapService) {}
 
+  @Get('tracks')
+  async getTrackCatalog() {
+    return this.roadmapService.getTrackCatalog();
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get('active')
   async getActiveRoadmap(@Request() req: any) {
