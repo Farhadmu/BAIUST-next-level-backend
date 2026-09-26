@@ -1,0 +1,958 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// --------------------------------------------------------
+// ENUMS
+// --------------------------------------------------------
+
+enum UserRoleType {
+  STUDENT
+  FACULTY
+  ALUMNI
+  MODERATOR
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum ResourceCategoryType {
+  LECTURE_NOTE
+  PDF_BOOK
+  SLIDES
+  LAB_MANUAL
+  PREVIOUS_QUESTION
+  ASSIGNMENT_SPEC
+  SOLUTION_GUIDE
+  IMPORTANT_TOPIC
+  EXAM_SUGGESTION
+  REFERENCE_MATERIAL
+}
+
+enum AnnouncementCategory {
+  ANNOUNCEMENT
+  NOTICE
+  REGISTRATION
+  WORKSHOP
+  CONTEST
+  EVENT
+  CAREER_OPPORTUNITY
+  IMPORTANT_NOTICE
+}
+
+enum TargetAudienceType {
+  ALL_CSE
+  FIRST_YEAR
+  SECOND_YEAR
+  THIRD_YEAR
+  FOURTH_YEAR
+  BATCH_SPECIFIC
+  ALUMNI_ONLY
+  COURSE_SPECIFIC
+}
+
+enum ProgressStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum MentorshipStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  COMPLETED
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum JobType {
+  FULL_TIME
+  PART_TIME
+  INTERNSHIP
+  CONTRACT
+  REMOTE
+}
+
+// --------------------------------------------------------
+// AUTH & USERS
+// --------------------------------------------------------
+
+model User {
+  id              String         @id @default(uuid())
+  email           String         @unique
+  passwordHash    String
+  fullName        String
+  avatarUrl       String?
+  bio             String?
+  role            UserRoleType   @default(STUDENT)
+  isActive        Boolean        @default(true)
+  isEmailVerified Boolean        @default(false)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  studentProfile  StudentProfile?
+  facultyProfile  FacultyProfile?
+  alumniProfile   AlumniProfile?
+  mentorProfile   MentorProfile?
+
+  refreshTokens   RefreshToken[]
+  bookmarks       ResourceBookmark[]
+  downloads       ResourceDownload[]
+  careerProgress  StudentCareerProgress[]
+  problemProgress StudentProblemProgress[]
+  posts           CommunityPost[]
+  comments        CommunityComment[]
+  reactions       PostReaction[]
+  eventRegs       EventRegistration[]
+  mentorshipsReq  MentorshipRequest[]    @relation("StudentMentorship")
+  auditLogs       AuditLog[]
+
+  // AI & Career Intelligence Relations
+  careerProfile       CareerProfile?
+  skillStates         StudentSkillState[]
+  skillHistories      SkillStateHistory[]
+  diagnosticAttempts  DiagnosticAttempt[]
+  roadmaps            PersonalizedRoadmap[]
+  projects            StudentProject[]
+  interviews          InterviewSession[]
+  resume              ResumeProfile?
+  gamification        UserGamification?
+  xpTransactions      XPTransaction[]
+  achievements        UserAchievement[]
+  notifications       StudentNotification[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  tokenHash String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+// --------------------------------------------------------
+// PROFILES
+// --------------------------------------------------------
+
+model StudentProfile {
+  id               String      @id @default(uuid())
+  userId           String      @unique
+  user             User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studentId        String      @unique
+  batchId          String
+  batch            Batch       @relation(fields: [batchId], references: [id])
+  currentSemester  Int         @default(1)
+  cgpa             Float?
+  githubUrl        String?
+  linkedinUrl      String?
+  codeforcesHandle String?
+  leetcodeHandle   String?
+  portfolioUrl     String?
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  enrollments      CourseEnrollment[]
+}
+
+model FacultyProfile {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  designation String
+  roomNumber  String?
+  officeHours String?
+  researchArea String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  courses     CourseFaculty[]
+}
+
+model AlumniProfile {
+  id                 String             @id @default(uuid())
+  userId             String             @unique
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  graduationYear     Int
+  currentCompany     String
+  position           String
+  industry           String
+  locationCountry    String
+  verificationStatus VerificationStatus @default(PENDING)
+  careerStory        String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  jobs               JobPost[]
+}
+
+model MentorProfile {
+  id             String              @id @default(uuid())
+  userId         String              @unique
+  user           User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  isAvailable    Boolean             @default(true)
+  expertise      String[]
+  availableHours String?
+  sessionLink    String?
+  createdAt      DateTime            @default(now())
+
+  requests       MentorshipRequest[] @relation("MentorMentorship")
+}
+
+// --------------------------------------------------------
+// ACADEMIC STRUCTURE
+// --------------------------------------------------------
+
+model Department {
+  id          String   @id @default(uuid())
+  name        String   @default("Computer Science and Engineering")
+  code        String   @unique @default("CSE")
+  batches     Batch[]
+  courses     Course[]
+  createdAt   DateTime @default(now())
+}
+
+model Batch {
+  id           String           @id @default(uuid())
+  departmentId String
+  department   Department       @relation(fields: [departmentId], references: [id])
+  batchNumber  Int              @unique
+  startYear    Int
+  students     StudentProfile[]
+  createdAt    DateTime         @default(now())
+}
+
+model Course {
+  id           String             @id @default(uuid())
+  code         String             @unique // e.g. CSE-311
+  title        String             // e.g. Data Structures & Algorithms
+  credits      Float
+  semesterNo   Int
+  syllabus     String?
+  departmentId String
+  department   Department         @relation(fields: [departmentId], references: [id])
+  createdAt    DateTime           @default(now())
+
+  faculties    CourseFaculty[]
+  enrollments  CourseEnrollment[]
+  resources    Resource[]
+  announcements CourseAnnouncement[]
+
+  @@index([code])
+  @@index([semesterNo])
+}
+
+model CourseFaculty {
+  id        String         @id @default(uuid())
+  courseId  String
+  course    Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  facultyId String
+  faculty   FacultyProfile @relation(fields: [facultyId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, facultyId])
+}
+
+model CourseEnrollment {
+  id        String         @id @default(uuid())
+  courseId  String
+  course    Course         @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  studentId String
+  student   StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  enrolledAt DateTime      @default(now())
+
+  @@unique([courseId, studentId])
+}
+
+// --------------------------------------------------------
+// ACADEMIC RESOURCES & ANNOUNCEMENTS
+// --------------------------------------------------------
+
+model Resource {
+  id             String               @id @default(uuid())
+  courseId       String
+  course         Course               @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  category       ResourceCategoryType
+  title          String
+  description    String?
+  fileUrl        String
+  fileSize       Int
+  fileFormat     String
+  downloadsCount Int                  @default(0)
+  isApproved     Boolean              @default(true)
+  uploadedById   String
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  bookmarks      ResourceBookmark[]
+  downloads      ResourceDownload[]
+
+  @@index([courseId])
+  @@index([category])
+}
+
+model ResourceBookmark {
+  id         String   @id @default(uuid())
+  resourceId String
+  resource   Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([resourceId, userId])
+}
+
+model ResourceDownload {
+  id           String   @id @default(uuid())
+  resourceId   String
+  resource     Resource @relation(fields: [resourceId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  downloadedAt DateTime @default(now())
+}
+
+model Announcement {
+  id             String               @id @default(uuid())
+  category       AnnouncementCategory
+  title          String
+  slug           String               @unique
+  content        String
+  coverImageUrl  String?
+  actionUrl      String?
+  actionLabel    String?
+  targetAudience TargetAudienceType   @default(ALL_CSE)
+  isTicker       Boolean              @default(false)
+  isPublished    Boolean              @default(true)
+  authorId       String
+  expiresAt      DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@index([category])
+  @@index([isTicker])
+}
+
+model CourseAnnouncement {
+  id        String   @id @default(uuid())
+  courseId  String
+  course    Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title     String
+  content   String
+  createdAt DateTime @default(now())
+
+  @@index([courseId])
+}
+
+// --------------------------------------------------------
+// CAREER ROADMAP & PROGRESS
+// --------------------------------------------------------
+
+model CareerTrack {
+  id          String                  @id @default(uuid())
+  slug        String                  @unique
+  title       String
+  description String
+  orderIndex  Int
+  createdAt   DateTime                @default(now())
+
+  modules     CareerModule[]
+  students    StudentCareerProgress[]
+}
+
+model CareerModule {
+  id          String                  @id @default(uuid())
+  trackId     String
+  track       CareerTrack             @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  orderIndex  Int
+  resources   Json
+  createdAt   DateTime                @default(now())
+
+  progresses  StudentModuleProgress[]
+
+  @@index([trackId])
+}
+
+model StudentCareerProgress {
+  id        String         @id @default(uuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trackId   String
+  track     CareerTrack    @relation(fields: [trackId], references: [id], onDelete: Cascade)
+  status    ProgressStatus @default(IN_PROGRESS)
+  startedAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  @@unique([userId, trackId])
+}
+
+model StudentModuleProgress {
+  id         String         @id @default(uuid())
+  userId     String
+  moduleId   String
+  module     CareerModule   @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  status     ProgressStatus @default(COMPLETED)
+  finishedAt DateTime       @default(now())
+
+  @@unique([userId, moduleId])
+}
+
+// --------------------------------------------------------
+// COMPETITIVE PROGRAMMING (CP)
+// --------------------------------------------------------
+
+model CPProblem {
+  id          String                   @id @default(uuid())
+  topicSlug   String
+  title       String
+  platform    String
+  externalUrl String
+  difficulty  String
+  createdAt   DateTime                 @default(now())
+
+  progresses  StudentProblemProgress[]
+
+  @@index([topicSlug])
+  @@index([difficulty])
+}
+
+model StudentProblemProgress {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  problemId String
+  problem   CPProblem @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  solvedAt  DateTime  @default(now())
+
+  @@unique([userId, problemId])
+}
+
+// --------------------------------------------------------
+// COMMUNITY & MENTORSHIP
+// --------------------------------------------------------
+
+model CommunityPost {
+  id        String             @id @default(uuid())
+  authorId  String
+  author    User               @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  category  String
+  title     String
+  content   String
+  tags      String[]
+  isFlagged Boolean            @default(false)
+  createdAt DateTime           @default(now())
+  updatedAt DateTime           @updatedAt
+
+  comments  CommunityComment[]
+  reactions PostReaction[]
+
+  @@index([category])
+}
+
+model CommunityComment {
+  id        String        @id @default(uuid())
+  postId    String
+  post      CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  content   String
+  createdAt DateTime      @default(now())
+
+  @@index([postId])
+}
+
+model PostReaction {
+  id        String        @id @default(uuid())
+  postId    String
+  post      CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  createdAt DateTime      @default(now())
+
+  @@unique([postId, userId, type])
+}
+
+model MentorshipRequest {
+  id        String           @id @default(uuid())
+  studentId String
+  student   User             @relation("StudentMentorship", fields: [studentId], references: [id], onDelete: Cascade)
+  mentorId  String
+  mentor    MentorProfile    @relation("MentorMentorship", fields: [mentorId], references: [id], onDelete: Cascade)
+  topic     String
+  message   String
+  status    MentorshipStatus @default(PENDING)
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+
+  @@index([studentId])
+  @@index([mentorId])
+}
+
+// --------------------------------------------------------
+// JOBS, INTERNSHIPS & EVENTS
+// --------------------------------------------------------
+
+model JobPost {
+  id                 String             @id @default(uuid())
+  authorId           String
+  author             AlumniProfile      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  title              String
+  company            String
+  location           String
+  jobType            JobType            @default(FULL_TIME)
+  description        String
+  requirements       String
+  applyUrl           String
+  deadline           DateTime?
+  verificationStatus VerificationStatus @default(PENDING)
+  createdAt          DateTime           @default(now())
+
+  @@index([jobType])
+}
+
+model DepartmentEvent {
+  id              String              @id @default(uuid())
+  title           String
+  slug            String              @unique
+  eventType       String
+  description     String
+  eventDate       DateTime
+  venue           String
+  speaker         String?
+  registrationUrl String?
+  deadline        DateTime?
+  createdAt       DateTime            @default(now())
+
+  registrations   EventRegistration[]
+
+  @@index([eventType])
+}
+
+model EventRegistration {
+  id           String          @id @default(uuid())
+  eventId      String
+  event        DepartmentEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  registeredAt DateTime        @default(now())
+
+  @@unique([eventId, userId])
+}
+
+// --------------------------------------------------------
+// AUDIT LOGGING & SYSTEM
+// --------------------------------------------------------
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  ipAddress String?
+  metadata  Json?
+  timestamp DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+}
+
+// --------------------------------------------------------
+// CAREER PROFILE & SKILL INTELLIGENCE
+// --------------------------------------------------------
+
+model CareerProfile {
+  id                   String   @id @default(uuid())
+  userId               String   @unique
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetRole           String   @default("software-engineer")
+  targetRoleName       String   @default("Software Engineer")
+  experienceLevel      String   @default("BEGINNER") // BEGINNER, INTERMEDIATE, ADVANCED
+  weeklyAvailableHours Int      @default(10)
+  onboardingCompleted  Boolean  @default(false)
+  resumeScore          Float?
+  interviewScore       Float?
+  aiAnalysis           Json?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Skill {
+  id          String   @id @default(uuid())
+  slug        String   @unique
+  name        String
+  category    String   // FRONTEND, BACKEND, DATABASE, DSA, DEVOPS, AI, CORE
+  description String?
+  createdAt   DateTime @default(now())
+
+  studentStates StudentSkillState[]
+}
+
+model StudentSkillState {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skillSlug      String
+  skill          Skill?   @relation(fields: [skillSlug], references: [slug], onDelete: Cascade)
+  knowledgeScore Float    @default(0)
+  practiceScore  Float    @default(0)
+  projectScore   Float    @default(0)
+  evidenceScore  Float    @default(0)
+  lastReviewed   DateTime @default(now())
+
+  @@unique([userId, skillSlug])
+  @@index([userId])
+}
+
+model SkillStateHistory {
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  skillSlug      String
+  knowledgeScore Float    @default(0)
+  practiceScore  Float    @default(0)
+  projectScore   Float    @default(0)
+  evidenceScore  Float    @default(0)
+  createdAt      DateTime @default(now())
+
+  @@index([userId])
+  @@index([skillSlug])
+}
+
+// --------------------------------------------------------
+// DIAGNOSTIC ASSESSMENT SYSTEM
+// --------------------------------------------------------
+
+model DiagnosticQuestion {
+  id            String             @id @default(uuid())
+  question      String
+  description   String?
+  category      String
+  skill         String
+  options       Json
+  correctAnswer String
+  difficulty    String             @default("BEGINNER")
+  order         Int                @default(1)
+  isActive      Boolean            @default(true)
+  createdAt     DateTime           @default(now())
+  answers       DiagnosticAnswer[]
+
+  @@index([category])
+  @@index([skill])
+}
+
+model DiagnosticAttempt {
+  id                String             @id @default(uuid())
+  userId            String
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetRole        String?
+  status            String             @default("IN_PROGRESS") // IN_PROGRESS, COMPLETED
+  totalQuestions    Int                @default(0)
+  answeredQuestions Int                @default(0)
+  score             Int?
+  startedAt         DateTime           @default(now())
+  completedAt       DateTime?
+  answers           DiagnosticAnswer[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model DiagnosticAnswer {
+  id             String             @id @default(uuid())
+  attemptId      String
+  attempt        DiagnosticAttempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId     String
+  question       DiagnosticQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  selectedAnswer String
+  isCorrect      Boolean?
+  evaluation     Json?
+  createdAt      DateTime           @default(now())
+
+  @@unique([attemptId, questionId])
+  @@index([questionId])
+}
+
+// --------------------------------------------------------
+// PERSONALIZED LEARNING ROADMAPS & MILESTONES
+// --------------------------------------------------------
+
+model PersonalizedRoadmap {
+  id          String             @id @default(uuid())
+  userId      String
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetRole  String
+  status      String             @default("ACTIVE") // ACTIVE, ARCHIVED, COMPLETED
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  milestones  RoadmapMilestone[]
+
+  @@index([userId])
+  @@index([userId, status])
+}
+
+model RoadmapMilestone {
+  id            String              @id @default(uuid())
+  roadmapId     String
+  roadmap       PersonalizedRoadmap @relation(fields: [roadmapId], references: [id], onDelete: Cascade)
+  order         Int
+  title         String
+  description   String?
+  status        String              @default("UPCOMING") // UPCOMING, CURRENT, COMPLETED, LOCKED
+  skillSlug     String?
+  type          String?             // THEORY, CODE, PROJECT, ASSESSMENT
+  estimatedTime String?
+  why           String?
+  unlocks       String[]
+
+  @@index([roadmapId])
+  @@index([order])
+}
+
+// --------------------------------------------------------
+// PROJECT STUDIO & EVIDENCE GRAPH
+// --------------------------------------------------------
+
+model StudentProject {
+  id                 String            @id @default(uuid())
+  userId             String
+  user               User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title              String
+  description        String?
+  repositoryUrl      String?
+  liveUrl            String?
+  projectType        String            @default("GENERATED") // GENERATED (Flow A) or IMPORTED (Flow B)
+  specification      Json?
+  aiSummary          Json?
+  plannedVsActual    Json?
+  techStack          String[]          @default([])
+  explanationQuality Float?
+  isVerified         Boolean           @default(false)
+  verificationToken  String?           @unique
+  score              Float             @default(0)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+  evidence           ProjectEvidence[]
+
+  @@index([userId])
+}
+
+model ProjectEvidence {
+  id           String         @id @default(uuid())
+  projectId    String
+  project      StudentProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId       String
+  skillSlug    String
+  evidenceType String         // GITHUB, LIVE, ASSESSMENT, CP
+  url          String?
+  metrics      Json?
+  createdAt    DateTime       @default(now())
+
+  @@unique([projectId, skillSlug])
+  @@index([userId])
+}
+
+// --------------------------------------------------------
+// AI INTERVIEW & RESUME INTELLIGENCE
+// --------------------------------------------------------
+
+model InterviewSession {
+  id          String              @id @default(uuid())
+  userId      String
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  category    String              @default("TECHNICAL") // TECHNICAL, DSA, BEHAVIORAL, SYSTEM_DESIGN
+  targetRole  String?
+  difficulty  String              @default("INTERMEDIATE")
+  status      String              @default("IN_PROGRESS") // IN_PROGRESS, COMPLETED
+  score       Float?
+  startedAt   DateTime            @default(now())
+  completedAt DateTime?
+  questions   InterviewQuestion[]
+  answers     InterviewAnswer[]
+
+  @@index([userId])
+  @@index([status])
+}
+
+model InterviewQuestion {
+  id        String            @id @default(uuid())
+  sessionId String
+  session   InterviewSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  order     Int
+  question  String
+  answers   InterviewAnswer[]
+
+  @@index([sessionId])
+  @@index([order])
+}
+
+model InterviewAnswer {
+  id          String            @id @default(uuid())
+  sessionId   String
+  session     InterviewSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  questionId  String
+  question    InterviewQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  answerText  String
+  evaluation  Json?
+  createdAt   DateTime          @default(now())
+
+  @@unique([sessionId, questionId])
+}
+
+model ResumeProfile {
+  id             String   @id @default(uuid())
+  userId         String   @unique
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetRole     String
+  fullName       String
+  email          String
+  phone          String?
+  location       String?
+  website        String?
+  github         String?
+  linkedin       String?
+  summary        String
+  skills         Json
+  experience     Json
+  projects       Json
+  education      Json
+  certifications Json?
+  atsScore       Int?     @default(0)
+  atsFeedback    Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId])
+}
+
+// --------------------------------------------------------
+// GAMIFICATION, RECOVERY & NOTIFICATIONS
+// --------------------------------------------------------
+
+model UserGamification {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  totalXp      Int      @default(0)
+  currentLevel Int      @default(1)
+  gemsBalance  Int      @default(25)
+  streakDays   Int      @default(1)
+  lastActiveAt DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model XPTransaction {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount      Int
+  actionType  String
+  referenceId String
+  description String
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, actionType, referenceId])
+  @@index([userId])
+}
+
+model UserAchievement {
+  id              String   @id @default(uuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  achievementCode String
+  title           String
+  description     String
+  badgeIcon       String
+  category        String   // ACADEMIC, SKILL, PROJECT, CP, CAREER
+  xpReward        Int      @default(50)
+  unlockedAt      DateTime @default(now())
+
+  @@unique([userId, achievementCode])
+  @@index([userId])
+}
+
+model StudentNotification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String   // SYSTEM, ACADEMIC, ROADMAP, RECOVERY, ACHIEVEMENT, JOB
+  title     String
+  message   String
+  isRead    Boolean  @default(false)
+  actionUrl String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, isRead])
+}
+
+// --------------------------------------------------------
+// OBSERVABILITY, AUDIT & AI TELEMETRY
+// --------------------------------------------------------
+
+model AiUsageLog {
+  id           String   @id @default(uuid())
+  provider     String   // GROQ, GEMINI, OPENROUTER, MISTRAL, DETERMINISTIC
+  model        String
+  feature      String   // COPILOT, DIAGNOSTIC, INTERVIEW, RESUME, PROJECT_SPEC
+  status       String   // SUCCESS, RATE_LIMIT, ERROR, FALLBACK
+  durationMs   Int?
+  tokensUsed   Int?
+  errorMessage String?
+  userId       String?
+  createdAt    DateTime @default(now())
+
+  @@index([provider])
+  @@index([feature])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model SystemErrorLog {
+  id         String   @id @default(uuid())
+  errorType  String
+  message    String
+  endpoint   String?
+  method     String?
+  statusCode Int?
+  userId     String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+model PlatformAnalyticsSnapshot {
+  id               String   @id @default(uuid())
+  date             DateTime @unique @db.Date
+  totalStudents    Int      @default(0)
+  activeUsers      Int      @default(0)
+  roadmapsActive   Int      @default(0)
+  assessmentsDone  Int      @default(0)
+  projectsVerified Int      @default(0)
+  careerReadyCount Int      @default(0)
+  createdAt        DateTime @default(now())
+
+  @@index([date])
+}
+
