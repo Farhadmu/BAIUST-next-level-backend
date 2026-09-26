@@ -6,13 +6,22 @@ export class RecoveryService {
   constructor(private prisma: PrismaService) {}
 
   async getAdaptiveRecoveryPlan(userId: string) {
-    const [gamification, roadmap] = await Promise.all([
-      this.prisma.userGamification.findUnique({ where: { userId } }),
-      this.prisma.personalizedRoadmap.findFirst({
-        where: { userId, status: 'ACTIVE' },
-        include: { milestones: true },
-      }),
-    ]);
+    let gamification: any = null;
+    let roadmap: any = null;
+
+    try {
+      const [g, r] = await Promise.all([
+        this.prisma.userGamification.findUnique({ where: { userId } }),
+        this.prisma.personalizedRoadmap.findFirst({
+          where: { userId, status: 'ACTIVE' },
+          include: { milestones: true },
+        }),
+      ]);
+      gamification = g;
+      roadmap = r;
+    } catch (e) {
+      // Offline fallback
+    }
 
     const lastActive = gamification?.lastActiveAt || new Date();
     const daysInactive = Math.max(0, Math.floor((Date.now() - new Date(lastActive).getTime()) / (1000 * 60 * 60 * 24)));
